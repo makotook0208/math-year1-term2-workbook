@@ -2,7 +2,7 @@
   'use strict';
 
   const STORAGE_KEY = 'year1Term2MathWorkbook.v1';
-  const MATH_VERSION = 1;
+  const MATH_VERSION = 2;
   const app = document.getElementById('app');
   const homeLink = document.getElementById('homeLink');
   const INSTRUCTIONS_BY_MAJOR = INSTRUCTIONS;
@@ -14,6 +14,11 @@
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
       if (saved && saved.version === MATH_VERSION && saved.history && saved.drafts) return saved;
+      // 選択式への変更前に保存された正誤記録は残し、入力途中の答えだけを初期化します。
+      if (saved && saved.version === 1 && saved.history) {
+        Object.values(saved.history).forEach((history) => { history.feedbackVisible = false; });
+        return { version: MATH_VERSION, history: saved.history, drafts: {}, run: null };
+      }
     } catch (_) { /* 保存データが読めない場合は、学習を続けられるよう初期状態にする */ }
     return EMPTY_STATE();
   }
@@ -68,64 +73,111 @@
     return `<button type="button" class="${className}" data-action="home">${escapeHtml(label)}</button>`;
   }
 
-  function renderHome() {
+  const LESSONS = {
+    terms: {
+      title: '式を「項」と「係数」に分ける',
+      lead: '式を足し算・引き算のまとまりに分け、文字にかかっている数を見つけます。',
+      sections: [
+        { title: '項は、符号ごとにひとまとまり', body: '項は、式を足し算でつないだときの一つひとつのまとまりです。引き算の項は、符号を付けたまま取り出します。', example: '3x−1 → 3x と −1' },
+        { title: '係数は、文字にかけられている数', body: '3x は 3×x なので係数は3です。−b は −1×b と考えるため、bの係数は−1です。文字だけの項にも、見えない1がかかっています。', example: '−6a−b+2 → aの係数は−6、bの係数は−1' },
+      ],
+      check: ['引き算の符号を項に付けたままにした？', '文字だけの項を、係数1または−1として見た？'],
+    },
+    expressions: {
+      title: '文字式を整理して計算する',
+      lead: '同じ文字の項をまとめ、かっこ・符号・分数の順に落ち着いて処理します。',
+      sections: [
+        { title: '同類項だけをまとめる', body: '文字の部分が同じ項どうしなら、係数を計算できます。文字の違う項や、文字と数だけの項はまとめられません。', example: '4x+7x=(4+7)x=11x\n3a+2−5a+6=(3−5)a+(2+6)=−2a+8' },
+        { title: 'かっこの前がマイナスなら、符号を変える', body: 'かっこの前の−は、かっこの中のすべての項に−1をかける合図です。', example: '(6a+9)−(4a+2)=6a+9−4a−2=2a+7' },
+        { title: '分配法則と割り算', body: '数をかっこの中の各項にかけます。分数で割るときは、逆数をかけます。負の数の符号にも気をつけましょう。', example: '−7(3a−8)=−21a+56\n12a÷(−6/7)=12a×(−7/6)=−14a' },
+      ],
+      check: ['同じ文字の項だけをまとめた？', 'かっこの前の−を中の全項に反映した？', '分数で割るとき逆数をかけた？'],
+    },
+    equations: {
+      title: '等式のバランスを保って方程式を解く',
+      lead: '等式の両辺に同じ計算をして、文字を片側に残します。',
+      sections: [
+        { title: '移項は「反対の計算」と考える', body: '等式の両辺に同じ数を足す・引く・かける・割ると、等式は保たれます。移項はこの操作を短く書いたものです。', example: 'x−8=5\n両辺に8を足す → x=13' },
+        { title: '文字を集め、最後に係数で割る', body: '文字を片側、数を反対側に移します。符号が変わることと、係数で割ることを忘れないようにします。', example: '3x−5=−17\n3x=−12 → x=−4' },
+        { title: 'かっこ・小数・分数は、先に扱いやすくする', body: 'かっこを外して整理します。小数は10や100をかけて整数に、分数は分母の最小公倍数を両辺にかけて消せます。', example: '0.5x=0.2x−0.9\n両辺を10倍 → 5x=2x−9 → x=−3' },
+      ],
+      check: ['同じ操作を両辺にした？', '移項した項の符号を変えた？', '最後に係数で割った？'],
+    },
+    proportions: {
+      title: '比例式は、外項と内項の積を使う',
+      lead: '比の等しさを、かけ算の等式に直してxを求めます。',
+      sections: [
+        { title: '外側どうし・内側どうしをかける', body: 'a:b=c:d なら、外項 a と d の積、内項 b と c の積が等しくなります。これを使うと比例式を方程式に直せます。', example: 'x:2=5:1\n外項の積 x×1、内項の積 2×5\nx=10' },
+        { title: 'xを含む式にしてから解く', body: '比にかっこがあっても、外項の積と内項の積を等しくします。その後はいつもの方程式と同じように整理します。', example: '6:9=2:(x−1)\n6(x−1)=9×2 → 6x−6=18 → x=4' },
+        { title: '分数の答えもそのままで大丈夫', body: '割り切れない答えは、無理に小数にせず分数で表せます。最後に元の比例式へ代入して、比が合うか確かめましょう。', example: '4:5=1:x\n4x=5 → x=5/4' },
+      ],
+      check: ['外項と内項を取り違えていない？', '積の式からxを正しく解いた？', '分数の答えを約分し、代入して確かめた？'],
+    },
+  };
+
+  function renderHome(activeTab = 'lesson', selectedLesson = 'terms') {
     const started = getStartedCount();
     const correct = getCorrectCount();
     const mistakeCount = getMistakeIds().length;
     const canResume = state.run?.status === 'practice' && state.run.ids?.length;
+    const lesson = LESSONS[selectedLesson] || LESSONS.terms;
+    const categoryTabs = Object.entries(CATEGORY_INFO).map(([key, category]) =>
+      `<button type="button" class="lesson-tab ${key === selectedLesson ? 'active' : ''}" data-lesson-select="${key}" role="tab" aria-selected="${key === selectedLesson}">${escapeHtml(category.label)}</button>`).join('');
+    const lessonSections = lesson.sections.map((section, index) =>
+      `<article class="lesson-step"><span class="lesson-step-number">${index + 1}</span><div><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.body)}</p><pre>${formatMath(section.example)}</pre></div></article>`).join('');
+    const lessonChecks = lesson.check.map((item) => `<li>${escapeHtml(item)}</li>`).join('');
     const cards = Object.entries(CATEGORY_INFO).map(([key, category]) => {
       const questions = categoryQuestions(key);
       const done = questions.filter((question) => getHistory(question.id).everCorrect).length;
-      return `<button type="button" class="category-card" data-category="${key}">
+      return `<article class="category-card">
         <span class="category-icon" aria-hidden="true">${escapeHtml(category.icon)}</span>
-        <span class="category-copy"><strong>${escapeHtml(category.label)}</strong><small>まずはこの分野から</small></span>
-        <span class="category-count"><strong>${questions.length}問</strong>${done ? `${done}問できた` : 'はじめよう'}</span>
-      </button>`;
+        <span class="category-copy"><strong>${escapeHtml(category.label)}</strong><small>${done} / ${questions.length}問正解</small></span>
+        <span class="category-actions"><button type="button" class="secondary-button" data-open-lesson="${key}">講義</button><button type="button" class="primary-button" data-category="${key}">演習へ</button></span>
+      </article>`;
     }).join('');
 
     app.innerHTML = `<section class="hero" aria-labelledby="page-title">
         <div class="hero-inner">
-          <div class="eyebrow">Math practice · 1st grade</div>
-          <h1 id="page-title">ひとつずつ解いて、<br>数学のコツをつかもう。</h1>
-          <p>文字式、方程式、比例式。中間テスト前の大切なポイントを、58問で練習できます。</p>
+          <div class="eyebrow">Math study · 1st grade</div>
+          <h1 id="page-title">学んでから解く。<br>解いて、理解を深める。</h1>
+          <p>まずは分野別の講義で解き方を確認。そのあと選択式の問題に挑戦し、答え合わせで手順まで振り返れます。</p>
           <div class="hero-meta"><strong>58</strong><span>問の演習</span><span class="dot" aria-hidden="true"></span><span>いつでも何度でも</span></div>
         </div>
       </section>
 
-      <div class="main-grid">
+      <nav class="study-tabs" role="tablist" aria-label="学習メニュー">
+        <button type="button" role="tab" aria-selected="${activeTab === 'lesson'}" class="study-tab ${activeTab === 'lesson' ? 'active' : ''}" data-home-tab="lesson">分野別講義</button>
+        <button type="button" role="tab" aria-selected="${activeTab === 'practice'}" class="study-tab ${activeTab === 'practice' ? 'active' : ''}" data-home-tab="practice">問題演習</button>
+      </nav>
+      ${activeTab === 'lesson' ? `<section class="panel lesson-panel" aria-labelledby="lesson-title">
+        <div class="section-heading"><div><h2 id="lesson-title">講義で解き方を確認</h2><p>分野を切り替えて、例題と手順を読めます</p></div><span class="lesson-duration">目安 3分</span></div>
+        <div class="lesson-tabs" role="tablist" aria-label="講義の分野">${categoryTabs}</div>
+        <div class="lesson-intro"><span class="eyebrow">${escapeHtml(CATEGORY_INFO[selectedLesson].label)}</span><h3>${escapeHtml(lesson.title)}</h3><p>${escapeHtml(lesson.lead)}</p></div>
+        <div class="lesson-steps">${lessonSections}</div>
+        <aside class="lesson-check"><strong>問題を解く前の確認</strong><ul>${lessonChecks}</ul></aside>
+        <button type="button" class="primary-button lesson-cta" data-category="${selectedLesson}">この分野の問題へ進む（${categoryQuestions(selectedLesson).length}問） →</button>
+      </section>` : `<div class="main-grid">
         <section class="panel panel-pad" aria-labelledby="categories-title">
-          <div class="section-heading"><h2 id="categories-title">今日はどこから解く？</h2><p>分野を選べます</p></div>
+          <div class="section-heading"><div><h2 id="categories-title">今日はどこから解く？</h2><p>講義を読み直してから演習にも戻れます</p></div></div>
           <div class="category-list">${cards}</div>
         </section>
-
         <aside class="panel panel-pad actions-panel" aria-label="演習を始める">
-          <button type="button" class="primary-button" data-start="all">全問にチャレンジ <span aria-hidden="true">→</span></button>
+          <button type="button" class="primary-button" data-start="all">全58問にチャレンジ <span aria-hidden="true">→</span></button>
           <button type="button" class="secondary-button" data-start="mistakes" ${mistakeCount ? '' : 'disabled'}>まちがえた問題を復習${mistakeCount ? `（${mistakeCount}問）` : ''}</button>
           ${canResume ? '<button type="button" class="secondary-button" data-action="resume">続きから再開</button>' : ''}
-          <div class="mini-progress">
-            <div class="mini-progress-head"><strong>これまでの学習</strong><span>${started} / ${QUESTIONS.length}問に挑戦</span></div>
-            <div class="progress-track" role="progressbar" aria-label="学習を始めた問題数" aria-valuemin="0" aria-valuemax="58" aria-valuenow="${started}"><div class="progress-fill" style="width:${(started / QUESTIONS.length) * 100}%"></div></div>
-            <p class="small">正解できた問題：${correct}問</p>
-          </div>
-          <div class="callout"><strong>ちょっとずつで大丈夫。</strong><br>分からない問題は飛ばして、あとで戻れます。<br>大問12の（5）〜（8）は、正答をもとに作った類題です。</div>
-          <details class="guide">
-            <summary>解く前に、4つのコツを確認</summary>
-            <div class="guide-content">
-              <p>・同じ文字の項どうし、数どうしをまとめる。</p>
-              <p>・かっこの前にマイナスがあるときは、符号に注意。</p>
-              <p>・方程式では、両辺に同じ操作をする。</p>
-              <p>・比例式では、外項の積と内項の積を等しくする。</p>
-            </div>
-          </details>
+          <div class="mini-progress"><div class="mini-progress-head"><strong>これまでの学習</strong><span>${started} / ${QUESTIONS.length}問に挑戦</span></div><div class="progress-track" role="progressbar" aria-label="学習を始めた問題数" aria-valuemin="0" aria-valuemax="58" aria-valuenow="${started}"><div class="progress-fill" style="width:${(started / QUESTIONS.length) * 100}%"></div></div><p class="small">正解できた問題：${correct}問</p></div>
+          <div class="callout"><strong>選んで答えて、解説で確認。</strong><br>正解でも間違いでも、答え合わせ後に正しい答えと解き方を確認できます。<br>大問12の（5）〜（8）は、正答をもとに作った類題です。</div>
           <p class="small" data-storage-notice hidden>このブラウザでは進み具合を保存できません。ページを閉じる前に結果を確認してください。</p>
         </aside>
-      </div>
-      <div class="button-row" style="justify-content:flex-end;margin-top:9px"><button type="button" class="danger-button" data-action="reset">学習記録をリセット</button></div>`;
+      </div>`}
+      <div class="button-row home-reset"><button type="button" class="danger-button" data-action="reset">学習記録をリセット</button></div>`;
 
+    app.querySelectorAll('[data-home-tab]').forEach((button) => button.addEventListener('click', () => renderHome(button.dataset.homeTab, selectedLesson)));
+    app.querySelectorAll('[data-lesson-select]').forEach((button) => button.addEventListener('click', () => renderHome('lesson', button.dataset.lessonSelect)));
+    app.querySelectorAll('[data-open-lesson]').forEach((button) => button.addEventListener('click', () => renderHome('lesson', button.dataset.openLesson)));
     app.querySelectorAll('[data-start]').forEach((button) => button.addEventListener('click', () => {
-      const mode = button.dataset.start;
-      if (mode === 'all') startRun('all', QUESTIONS.map((question) => question.id));
-      if (mode === 'mistakes') startRun('mistakes', getMistakeIds());
+      if (button.dataset.start === 'all') startRun('all', QUESTIONS.map((question) => question.id));
+      if (button.dataset.start === 'mistakes') startRun('mistakes', getMistakeIds());
     }));
     app.querySelectorAll('[data-category]').forEach((button) => button.addEventListener('click', () => {
       const category = button.dataset.category;
@@ -185,6 +237,135 @@
     saveState();
   }
 
+  function asDisplayMath(value) {
+    return String(value).replace(/-/g, '−');
+  }
+
+  function termsAnswerObject(question) {
+    const answer = {};
+    question.fields.forEach((field) => { answer[field.key] = field.expected; });
+    return answer;
+  }
+
+  function termsAnswerText(question, answer) {
+    return question.fields.map((field) => {
+      const value = Array.isArray(answer[field.key]) ? answer[field.key].join('、') : answer[field.key];
+      const label = field.key === 'terms' ? '項' : field.label.replace(/（.*$/, '');
+      return `${label}：${asDisplayMath(value ?? '')}`;
+    }).join(' ／ ');
+  }
+
+  function makeChoiceOptions(question) {
+    const correct = question.type === 'terms' ? termsAnswerObject(question) : question.answer;
+    const candidates = [{ value: correct, correct: true }];
+    const add = (value) => {
+      if (question.type === 'terms') {
+        const same = question.fields.every((field) => {
+          const left = value[field.key];
+          const right = correct[field.key];
+          if (Array.isArray(left) || Array.isArray(right)) return JSON.stringify(left) === JSON.stringify(right);
+          return sameLinearExpression(left, right);
+        });
+        if (same) return;
+        if (!candidates.some((item) => question.fields.every((field) => JSON.stringify(item.value[field.key]) === JSON.stringify(value[field.key])))) candidates.push({ value, correct: false });
+        return;
+      }
+      const equal = question.type === 'expression' ? sameLinearExpression(value, correct) : Math.abs(parseNumber(normalizeInput(value)) - parseNumber(normalizeInput(correct))) < 1e-8;
+      if (!equal && !candidates.some((item) => (question.type === 'expression' ? sameLinearExpression(item.value, value) : Math.abs(parseNumber(item.value) - parseNumber(value)) < 1e-8))) candidates.push({ value, correct: false });
+    };
+
+    if (question.type === 'terms') {
+      const base = termsAnswerObject(question);
+      const termField = question.fields.find((field) => Array.isArray(field.expected));
+      if (termField) {
+        termField.expected.forEach((term, index) => {
+          const changed = JSON.parse(JSON.stringify(base));
+          changed[termField.key] = [...termField.expected];
+          changed[termField.key][index] = term.startsWith('-') ? term.slice(1) : `-${term}`;
+          add(changed);
+        });
+      }
+      question.fields.filter((field) => !Array.isArray(field.expected)).forEach((field) => {
+        const n = parseNumber(field.expected);
+        [String(-n), String(n + (n >= 0 ? 1 : -1)), String(n - (n >= 0 ? 1 : -1))].forEach((variant) => {
+          const changed = JSON.parse(JSON.stringify(base));
+          changed[field.key] = variant;
+          add(changed);
+        });
+      });
+    } else if (question.type === 'value') {
+      const value = parseNumber(normalizeInput(correct));
+      const direction = value >= 0 ? 1 : -1;
+      const variants = [-value, value + direction, value - direction, value * 2, value / 2,
+        value + direction * 2, value - direction * 2, value + direction * 3, value - direction * 3];
+      if (value !== 0) variants.push(1 / value);
+      variants.map(formatRational).forEach(add);
+    } else {
+      const parsed = parseLinear(correct);
+      if (parsed) {
+        const variables = ['a', 'x', 'y'].filter((key) => parsed[key] !== 0);
+        const first = variables[0];
+        const changed = { ...parsed };
+        Object.keys(changed).forEach((key) => { changed[key] *= -1; });
+        add(formatLinear(changed));
+        if (first) {
+          [1, -1, 2, -2, 3, -3].forEach((delta) => {
+            const altered = { ...parsed, [first]: parsed[first] + delta };
+            add(formatLinear(altered));
+          });
+        }
+        if (parsed.constant !== 0) {
+          add(formatLinear({ ...parsed, constant: -parsed.constant }));
+          const direction = parsed.constant > 0 ? 1 : -1;
+          [1, -1, 2, -2].forEach((delta) => add(formatLinear({ ...parsed, constant: parsed.constant + direction * delta })));
+        }
+      }
+    }
+
+    // 固定シードで並び順を安定させつつ、正答が毎回同じ位置にならないようにします。
+    let seed = [...question.id].reduce((sum, character) => (sum * 31 + character.charCodeAt(0)) >>> 0, 7);
+    const options = candidates.slice(0, 4);
+    for (let i = options.length - 1; i > 0; i -= 1) {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      const j = seed % (i + 1);
+      [options[i], options[j]] = [options[j], options[i]];
+    }
+    return options.map((option, index) => ({ ...option, key: String.fromCharCode(65 + index) }));
+  }
+
+  function formatRational(value) {
+    if (!Number.isFinite(value)) return '0';
+    if (Math.abs(value - Math.round(value)) < 1e-8) return String(Math.round(value));
+    for (let denominator = 2; denominator <= 100; denominator += 1) {
+      const numerator = Math.round(value * denominator);
+      if (Math.abs(numerator / denominator - value) < 1e-8) {
+        let a = Math.abs(numerator);
+        let b = denominator;
+        while (b) [a, b] = [b, a % b];
+        return `${numerator / a}/${denominator / a}`;
+      }
+    }
+    return String(Number(value.toFixed(3)));
+  }
+
+  function formatLinear(coefficients) {
+    const pieces = [];
+    ['a', 'x', 'y', 'constant'].forEach((key) => {
+      const value = coefficients[key];
+      if (!value) return;
+      const abs = Math.abs(value);
+      const body = key === 'constant' ? formatRational(abs) : `${abs === 1 ? '' : formatRational(abs)}${key}`;
+      if (!pieces.length) pieces.push(value < 0 ? `-${body}` : body);
+      else pieces.push(`${value < 0 ? '-' : '+'}${body}`);
+    });
+    return pieces.join('') || '0';
+  }
+
+  function makeAnswerOptionText(question, option) {
+    if (question.type === 'terms') return termsAnswerText(question, option.value);
+    return question.type === 'value' ? `${question.variable} = ${asDisplayMath(option.value)}` : asDisplayMath(option.value);
+  }
+
   function renderAnswerInput(question, draft) {
     if (question.type === 'multiChoice') {
       const selected = Array.isArray(draft) ? draft : [];
@@ -192,14 +373,10 @@
         ${question.choices.map((choice) => `<label class="option-label"><input type="checkbox" data-choice="${choice.key}" ${selected.includes(choice.key) ? 'checked' : ''}><span>${escapeHtml(choice.text)}</span></label>`).join('')}
       </div></div>`;
     }
-    if (question.type === 'terms') {
-      return `<div class="answer-block"><h3 id="answer-heading">項と係数を入力しましょう</h3>
-        ${question.fields.map((field) => `<div class="answer-field"><label for="answer-${field.key}">${escapeHtml(field.label)}</label><input id="answer-${field.key}" type="text" autocomplete="off" spellcheck="false" data-field="${field.key}" value="${escapeHtml(draft[field.key] || '')}" placeholder="${field.key === 'terms' ? '例：3x, -1' : '答えを入力'}"></div>`).join('')}
-      </div>`;
-    }
-    const label = question.type === 'value' ? `${question.variable}の値` : '計算した答え';
-    const placeholder = question.type === 'value' ? '例：-3、1/2' : '例：11x、8-2a';
-    return `<div class="answer-block"><h3 id="answer-heading">答えを入力しましょう</h3><div class="answer-field"><label for="answer">${escapeHtml(label)}</label><input id="answer" type="text" autocomplete="off" spellcheck="false" value="${escapeHtml(typeof draft === 'string' ? draft : '')}" placeholder="${placeholder}"></div></div>`;
+    const options = makeChoiceOptions(question);
+    return `<div class="answer-block"><h3 id="answer-heading">答えを1つ選びましょう</h3><div class="option-list" role="radiogroup" aria-labelledby="answer-heading">
+      ${options.map((option) => `<label class="option-label"><input type="radio" name="answer-choice" data-answer-choice="${option.key}" value="${option.key}" ${draft === option.key ? 'checked' : ''}><span class="option-letter">${option.key}</span><span>${formatMath(escapeHtml(makeAnswerOptionText(question, option)))}</span></label>`).join('')}
+    </div></div>`;
   }
 
   function renderQuestion() {
@@ -234,8 +411,7 @@
           <p class="instruction">${escapeHtml(INSTRUCTIONS_BY_MAJOR[question.major])}</p>
           <div class="question-math ${isLong ? 'long' : ''}">${formatMath(question.prompt)}</div>
           ${renderAnswerInput(question, draft)}
-          ${renderSymbolPad()}
-          <div class="question-tools"><button type="button" class="hint-button" id="hint-button" aria-expanded="false">ヒントを見る <span aria-hidden="true">＋</span></button><span class="small">${history.attempts ? `これまで ${history.attempts} 回入力` : '分からないときは、あとで戻れます'}</span></div>
+          <div class="question-tools"><button type="button" class="hint-button" id="hint-button" aria-expanded="false">ヒントを見る <span aria-hidden="true">＋</span></button><span class="small">${history.attempts ? `これまで ${history.attempts} 回回答` : '分からないときは、あとで戻れます'}</span></div>
           <div class="hint-box" id="hint-box" hidden>${escapeHtml(question.hint)}</div>
           <p class="notice" id="answer-notice" aria-live="polite"></p>
           <div class="button-row" style="margin-top:12px"><button type="button" class="primary-button" id="check-button">答え合わせ</button></div>
@@ -275,7 +451,7 @@
         state.history[question.id] = history;
         saveState();
         renderQuestion();
-        const answerInput = app.querySelector('input[type="text"]');
+        const answerInput = app.querySelector('[data-answer-choice], [data-choice]');
         answerInput?.focus();
       } else moveQuestion(1);
     });
@@ -295,79 +471,38 @@
     }).join('');
   }
 
-  function renderSymbolPad() {
-    const tokens = [
-      { label: '−', value: '−' }, { label: '+', value: '+' }, { label: 'x', value: 'x' },
-      { label: 'a', value: 'a' }, { label: 'y', value: 'y' }, { label: '/', value: '/' },
-      { label: ':', value: ':' }, { label: ',', value: ', ' }, { label: '=', value: '=' },
-    ];
-    return `<details class="symbol-details"><summary>記号を入力する</summary><div class="symbol-pad">${tokens.map((token) => `<button type="button" data-insert="${escapeHtml(token.value)}">${escapeHtml(token.label)}</button>`).join('')}</div></details>`;
-  }
-
   function bindQuestionInputs(question) {
-    const textInputs = [...app.querySelectorAll('input[type="text"]')];
-    const updateTextDraft = () => {
-      if (question.type === 'terms') {
-        const draft = {};
-        app.querySelectorAll('[data-field]').forEach((input) => { draft[input.dataset.field] = input.value; });
-        setDraft(question, draft);
-      } else setDraft(question, textInputs[0]?.value || '');
-    };
-    textInputs.forEach((input) => {
-      input.addEventListener('input', updateTextDraft);
-      input.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          gradeQuestion(question);
-        }
-      });
-    });
     app.querySelectorAll('[data-choice]').forEach((input) => input.addEventListener('change', () => {
       setDraft(question, [...app.querySelectorAll('[data-choice]:checked')].map((item) => item.dataset.choice));
     }));
-    let activeInput = null;
-    textInputs.forEach((input) => input.addEventListener('focus', () => { activeInput = input; }));
-    app.querySelectorAll('[data-insert]').forEach((button) => button.addEventListener('click', () => {
-      if (!activeInput) {
-        activeInput = textInputs[0];
-        activeInput?.focus();
-      }
-      if (!activeInput) return;
-      const insertion = button.dataset.insert;
-      const start = activeInput.selectionStart ?? activeInput.value.length;
-      const end = activeInput.selectionEnd ?? activeInput.value.length;
-      activeInput.value = activeInput.value.slice(0, start) + insertion + activeInput.value.slice(end);
-      activeInput.focus();
-      const cursor = start + insertion.length;
-      activeInput.setSelectionRange(cursor, cursor);
-      activeInput.dispatchEvent(new Event('input', { bubbles: true }));
+    app.querySelectorAll('[data-answer-choice]').forEach((input) => input.addEventListener('change', () => {
+      setDraft(question, input.value);
     }));
   }
 
   function feedbackHtml(question, correct, answer, history) {
-    const title = correct ? '正解です。' : 'もう一度考えてみましょう。';
+    const title = correct ? '正解です。解き方も確認しましょう。' : '大丈夫。正しい答えと解き方を確認しましょう。';
     const extra = history.attempts > 1 ? `<span class="small"> ${history.attempts}回目の答え合わせ</span>` : '';
     const action = correct
       ? `<button type="button" class="primary-button" data-feedback-action="next">${state.run.index === state.run.ids.length - 1 ? '結果を見る' : '次の問題へ'} →</button>`
       : `<div class="button-row"><button type="button" class="secondary-button" data-feedback-action="retry">答えを直す</button><button type="button" class="primary-button" data-feedback-action="next">${state.run.index === state.run.ids.length - 1 ? '結果を見る' : '次の問題へ'} →</button></div>`;
-    const displayAnswer = answer && typeof answer === 'object'
-      ? Object.values(answer).filter(Boolean).join('、') || '未選択'
-      : String(answer || '');
+    const displayAnswer = question.type === 'multiChoice'
+      ? (answer || []).map((key) => question.choices.find((choice) => choice.key === key)?.text || key).join('、') || '未選択'
+      : makeChoiceOptions(question).find((option) => option.key === answer) ? makeAnswerOptionText(question, makeChoiceOptions(question).find((option) => option.key === answer)) : '未選択';
+    const correctAnswer = question.type === 'multiChoice'
+      ? question.correct.map((key) => question.choices.find((choice) => choice.key === key)?.text || key).join('、')
+      : makeAnswerOptionText(question, makeChoiceOptions(question).find((option) => option.correct));
     return `<section class="feedback ${correct ? '' : 'wrong'}" aria-live="polite"><p class="feedback-title">${title}${extra}</p>
-      <p class="solution">${escapeHtml(question.explanation)}</p>
-      <p class="small">あなたの答え：${escapeHtml(displayAnswer)}</p>
+      <p class="your-answer"><strong>あなたの選択：</strong>${formatMath(escapeHtml(displayAnswer))}</p>
+      ${correct ? '' : `<p class="correct-answer"><strong>正しい答え：</strong>${formatMath(escapeHtml(correctAnswer))}</p>`}
+      <div class="solution-block"><h3>解き方</h3><p class="solution">${formatMath(escapeHtml(question.explanation))}</p></div>
       <div class="feedback-actions">${action}</div>
     </section>`;
   }
 
   function readAnswer(question) {
     if (question.type === 'multiChoice') return [...app.querySelectorAll('[data-choice]:checked')].map((input) => input.dataset.choice);
-    if (question.type === 'terms') {
-      const answer = {};
-      app.querySelectorAll('[data-field]').forEach((input) => { answer[input.dataset.field] = input.value.trim(); });
-      return answer;
-    }
-    return app.querySelector('#answer')?.value.trim() || '';
+    return app.querySelector('[data-answer-choice]:checked')?.value || '';
   }
 
   function normalizeInput(input) {
@@ -423,35 +558,13 @@
     return Object.keys(first).every((key) => Math.abs(first[key] - second[key]) < 1e-8);
   }
 
-  function canonicalTerm(term) {
-    const parsed = parseLinear(term);
-    if (!parsed) return `raw:${normalizeInput(term)}`;
-    return Object.keys(parsed).map((key) => `${key}:${Math.round(parsed[key] * 1e8) / 1e8}`).join('|');
-  }
-
-  function sameTermSet(userValue, expectedTerms) {
-    const terms = String(userValue).split(/[,，、;；\s]+/).filter(Boolean);
-    if (terms.length !== expectedTerms.length) return false;
-    const userTerms = terms.map(canonicalTerm).sort();
-    const correctTerms = expectedTerms.map(canonicalTerm).sort();
-    return userTerms.every((term, index) => term === correctTerms[index]);
-  }
-
   function checkAnswer(question, answer) {
     if (question.type === 'multiChoice') {
       const selected = [...answer].sort();
       const expected = [...question.correct].sort();
       return selected.length === expected.length && selected.every((choice, index) => choice === expected[index]);
     }
-    if (question.type === 'terms') {
-      return sameTermSet(answer.terms || '', question.fields[0].expected)
-        && question.fields.slice(1).every((field) => sameLinearExpression(answer[field.key] || '', field.expected));
-    }
-    if (question.type === 'expression') return sameLinearExpression(answer, question.answer);
-    const cleaned = normalizeInput(answer).replace(/^[axy]=/, '');
-    const userValue = parseNumber(cleaned);
-    const correctValue = parseNumber(question.answer);
-    return Number.isFinite(userValue) && Number.isFinite(correctValue) && Math.abs(userValue - correctValue) < 1e-8;
+    return makeChoiceOptions(question).some((option) => option.key === answer && option.correct);
   }
 
   function gradeQuestion(question) {
@@ -463,8 +576,8 @@
         : !answer;
     if (empty) {
       const notice = document.getElementById('answer-notice');
-      if (notice) notice.textContent = '答えを入力するか、当てはまるものを選んでください。';
-      const firstInput = app.querySelector('input[type="text"], input[type="checkbox"]');
+      if (notice) notice.textContent = '答えを選んでください。';
+      const firstInput = app.querySelector('input[type="radio"], input[type="checkbox"]');
       firstInput?.focus();
       return;
     }
